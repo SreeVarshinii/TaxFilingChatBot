@@ -102,34 +102,19 @@ class TaxEngine:
             retriever=self.retriever_base,
             combine_docs_chain=create_stuff_documents_chain(llm, prompt)
         )
-        self.session_data = {
-            "entry_date": None,
-            "income_type": None,
-            "exempt_individual": None,
-            "days_present_current_year": 0
-        }
         
-    def evaluate_5_year_rule(self):
+    def evaluate_5_year_rule(self, entry_date):
         """
         Determines Exemption from counting days (5-year rule for F-1).
-        If the student has been an exempt individual for any part of 5 calendar years,
-        they may no longer be exempt (subject to closer connection exception).
-        For simplicity in Phase 1: determine years present.
         """
-        if not self.session_data["entry_date"]:
+        if not entry_date:
             return False
             
-        entry_dt = datetime.strptime(self.session_data["entry_date"], "%Y-%m-%d")
+        entry_dt = datetime.strptime(entry_date, "%Y-%m-%d")
         current_year = 2025
         years_present = current_year - entry_dt.year + 1
         
-        # If years_present <= 5, they are generally an exempt individual and thus Nonresident Alien
-        if years_present <= 5:
-            self.session_data["exempt_individual"] = True
-            return True
-        else:
-            self.session_data["exempt_individual"] = False
-            return False
+        return years_present <= 5
             
     def query(self, user_question: str):
         response = self.qa_chain.invoke({"input": user_question})

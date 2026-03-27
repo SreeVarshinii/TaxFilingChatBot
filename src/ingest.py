@@ -62,14 +62,8 @@ def main():
         custom_metadata = get_metadata_from_filename(source_file)
         
         if filename.lower().startswith("f"):
-            print(f"Loading '{filename}' with UnstructuredPDFLoader for structure-aware chunking...")
-            from langchain_community.document_loaders import UnstructuredPDFLoader
-            # 'fast' strategy uses pdfminer and avoids OCR dependencies, while 'by_title' groups elements logically
-            loader = UnstructuredPDFLoader(file_path, mode="elements", strategy="fast", chunking_strategy="by_title")
-            docs = loader.load()
-            for doc in docs:
-                doc.metadata.update(custom_metadata)
-            form_docs.extend(docs)
+            print(f"Skipping form '{filename}' (not embedding forms)...")
+            continue
         else:
             print(f"Loading '{filename}' with PyPDFLoader for semantic chunking...")
             from langchain_community.document_loaders import PyPDFLoader
