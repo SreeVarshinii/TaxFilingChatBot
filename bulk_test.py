@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from typing import List, Dict
 
 # Assuming the Tax Engine uses these same embeddings under the hood
-from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
 from supabase.client import create_client
 from src.engine import TaxEngine
 
@@ -17,10 +17,7 @@ def main():
     
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     
-    embeddings_model = HuggingFaceBgeEmbeddings(
-        model_name="BAAI/bge-small-en-v1.5",
-        encode_kwargs={"normalize_embeddings": True}
-    )
+    embeddings_model = FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
     
     # We will also use the TaxEngine to get the full LLM generated answer
     print("Initializing Tax Engine...")
