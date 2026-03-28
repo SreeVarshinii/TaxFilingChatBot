@@ -1,6 +1,6 @@
 langchain~=0.3.0
 langchain-community~=0.3.0
-fastembed
+langchain-google-genai~=2.0.0
 supabase
 azure-functions>=1.16.0
 pydantic

@@ -1,13 +1,17 @@
--- 1. Decrease the dimension of the embedding vector column back to 384 for FastEmbed (BAAI/bge-small)
-ALTER TABLE documents ALTER COLUMN embedding TYPE vector(384);
+-- 1. Empty the table completely so PostgreSQL doesn't crash on existing 384-dim vectors
+TRUNCATE TABLE documents;
 
--- 2. Drop the old hybrid_search function (using 768 dims constraint)
+-- 2. Increase the dimension of the embedding vector column to support Gemini (3072 dims natively)
+ALTER TABLE documents ALTER COLUMN embedding TYPE vector(3072);
+
+-- 3. Drop the old hybrid_search function 
+DROP FUNCTION IF EXISTS hybrid_search(text, vector(384), integer, integer);
 DROP FUNCTION IF EXISTS hybrid_search(text, vector(768), integer, integer);
 
--- 3. Recreate the function expecting 384 dimension vectors
+-- 4. Recreate the function expecting 3072 dimension vectors
 CREATE OR REPLACE FUNCTION hybrid_search(
     query_text TEXT,
-    query_embedding vector(384),
+    query_embedding vector(3072),
     match_count INT DEFAULT 5,
     rrf_k INT DEFAULT 60
 )

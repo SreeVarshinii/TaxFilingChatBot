@@ -73,9 +73,9 @@ def main():
                 doc.metadata.update(custom_metadata)
             semantic_docs.extend(docs)
 
-    print("Initializing FastEmbed Embeddings (Local ONNX execution)...")
-    from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
-    embeddings = FastEmbedEmbeddings()
+    print("Initializing Google Generative AI Embeddings...")
+    from langchain_google_genai import GoogleGenerativeAIEmbeddings
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
 
     print(f"Splitting {len(semantic_docs)} publication pages using Recursive Character Chunking...")
     # Replacing the API-heavy SemanticChunker with a local Recursive Splitter to avoid 429 Rate Limits
@@ -94,19 +94,33 @@ def main():
     chunks = semantic_chunks + form_docs
     print(f"Total chunks to upload: {len(chunks)}")
 
-    print("Uploading chunks and embeddings to Supabase in batches to prevent SSL timeouts...")
+    print("Uploading chunks and embeddings to Supabase in batches to perfectly thread the Gemini 100-chunks/minute limit...")
     # 'documents' is the default table name expected by SupabaseVectorStore
-    batch_size = 30
-    for i in range(0, len(chunks), batch_size):
+    import time
+    batch_size = 85
+    total_chunks = len(chunks)
+    
+    for i in range(0, total_chunks, batch_size):
         batch = chunks[i: i + batch_size]
-        print(f"Uploading batch {i+1} to {min(i+batch_size, len(chunks))} of {len(chunks)}...")
-        SupabaseVectorStore.from_documents(
-            batch,
-            embeddings,
-            client=supabase,
-            table_name="documents",
-            query_name="match_documents"
-        )
+        print(f"Uploading batch {i//batch_size + 1} ({i+1} to {min(i+batch_size, total_chunks)} of {total_chunks})...")
+        
+        # Retry loop for Mac SSL / Supabase limits
+        for attempt in range(3):
+            try:
+                SupabaseVectorStore.from_documents(
+                    batch,
+                    embeddings,
+                    client=supabase,
+                    table_name="documents",
+                    query_name="match_documents"
+                )
+                break # Success, break out of retry loop
+            except Exception as e:
+                print(f"Network error on batch {i}: {e}. Retrying {attempt+1}/3 in 10 seconds...")
+                time.sleep(10)
+                
+        print("Sleeping 60 seconds to completely reset the 100-chunks-per-minute Gemini free tier quota...")
+        time.sleep(60)
     
     print("Ingestion complete! Data successfully uploaded to Supabase pgvector.")
 

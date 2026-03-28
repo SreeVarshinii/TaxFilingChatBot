@@ -1,8 +1,7 @@
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from supabase.client import create_client, Client
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import Field
@@ -15,7 +14,7 @@ SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_KEY", "")
 
 class TaxEngine:
     def __init__(self):
-        self.embeddings = FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
+        self.embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
         self.llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0)
         
         self.prompt = ChatPromptTemplate.from_messages([
