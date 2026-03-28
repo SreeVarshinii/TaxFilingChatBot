@@ -2,8 +2,5 @@ langchain~=0.3.0
 langchain-community~=0.3.0
 langchain-google-genai~=2.0.0
 supabase
-huggingface-hub
-langchain-huggingface~=0.1.0
-sentence-transformers
 azure-functions>=1.16.0
 pydantic

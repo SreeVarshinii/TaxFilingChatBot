@@ -73,16 +73,8 @@ def main():
                 doc.metadata.update(custom_metadata)
             semantic_docs.extend(docs)
 
-    print("Initializing BAAI/bge-small-en-v1.5 Embeddings...")
-    from langchain_community.embeddings import HuggingFaceBgeEmbeddings
-    model_name = "BAAI/bge-small-en-v1.5"
-    model_kwargs = {'device': 'cpu'}
-    encode_kwargs = {'normalize_embeddings': True} # set True to compute cosine similarity
-    embeddings = HuggingFaceBgeEmbeddings(
-        model_name=model_name,
-        model_kwargs=model_kwargs,
-        encode_kwargs=encode_kwargs
-    )
+    print("Initializing Google Generative AI Embeddings...")
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
 
     print(f"Splitting {len(semantic_docs)} publication pages using Semantic Chunking...")
     # Semantic chunking uses the embedding model to find logical breakpoints

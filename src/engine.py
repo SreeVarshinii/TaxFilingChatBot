@@ -1,8 +1,7 @@
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from supabase.client import create_client, Client
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
@@ -27,14 +26,8 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not GOOGLE_API_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-model_name = "BAAI/bge-small-en-v1.5"
-model_kwargs = {'device': 'cpu'}
-encode_kwargs = {'normalize_embeddings': True}
-embeddings = HuggingFaceBgeEmbeddings(
-    model_name=model_name,
-    model_kwargs=model_kwargs,
-    encode_kwargs=encode_kwargs
-)
+# Using Gemini embeddings natively bypasses the 800MB PyTorch dependency
+embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0)
 
 class SupabaseRestRetriever(BaseRetriever):
