@@ -73,32 +73,40 @@ def main():
                 doc.metadata.update(custom_metadata)
             semantic_docs.extend(docs)
 
-    print("Initializing Google Generative AI Embeddings...")
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+    print("Initializing FastEmbed Embeddings (Local ONNX execution)...")
+    from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
+    embeddings = FastEmbedEmbeddings()
 
-    print(f"Splitting {len(semantic_docs)} publication pages using Semantic Chunking...")
-    # Semantic chunking uses the embedding model to find logical breakpoints
-    from langchain_experimental.text_splitter import SemanticChunker
-    text_splitter = SemanticChunker(embeddings, breakpoint_threshold_type="percentile")
+    print(f"Splitting {len(semantic_docs)} publication pages using Recursive Character Chunking...")
+    # Replacing the API-heavy SemanticChunker with a local Recursive Splitter to avoid 429 Rate Limits
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1200,
+        chunk_overlap=200,
+        length_function=len
+    )
     
     semantic_chunks = text_splitter.split_documents(semantic_docs)
-    print(f"Created {len(semantic_chunks)} semantic chunks.")
+    print(f"Created {len(semantic_chunks)} chunks.")
     
     print(f"Loaded {len(form_docs)} structure-aware chunks from forms.")
     
     chunks = semantic_chunks + form_docs
     print(f"Total chunks to upload: {len(chunks)}")
 
-    print("Uploading chunks and embeddings to Supabase...")
-    # We use SupabaseVectorStore.from_documents to embed and upload
+    print("Uploading chunks and embeddings to Supabase in batches to prevent SSL timeouts...")
     # 'documents' is the default table name expected by SupabaseVectorStore
-    vector_store = SupabaseVectorStore.from_documents(
-        chunks,
-        embeddings,
-        client=supabase,
-        table_name="documents",
-        query_name="match_documents"
-    )
+    batch_size = 30
+    for i in range(0, len(chunks), batch_size):
+        batch = chunks[i: i + batch_size]
+        print(f"Uploading batch {i+1} to {min(i+batch_size, len(chunks))} of {len(chunks)}...")
+        SupabaseVectorStore.from_documents(
+            batch,
+            embeddings,
+            client=supabase,
+            table_name="documents",
+            query_name="match_documents"
+        )
     
     print("Ingestion complete! Data successfully uploaded to Supabase pgvector.")
 

@@ -1,7 +1,8 @@
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
 from supabase.client import create_client, Client
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
@@ -26,8 +27,8 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not GOOGLE_API_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-# Using Gemini embeddings natively bypasses the 800MB PyTorch dependency
-embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+# FastEmbed runs BAAI/bge-small locally via ONNX without PyTorch bloat
+embeddings = FastEmbedEmbeddings()
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0)
 
 class SupabaseRestRetriever(BaseRetriever):

@@ -1,13 +1,13 @@
--- 1. Increase the dimension of the embedding vector column to support Gemini (768 dims)
-ALTER TABLE documents ALTER COLUMN embedding TYPE vector(768);
+-- 1. Decrease the dimension of the embedding vector column back to 384 for FastEmbed (BAAI/bge-small)
+ALTER TABLE documents ALTER COLUMN embedding TYPE vector(384);
 
--- 2. Drop the old hybrid_search function (using 384 dims constraint)
-DROP FUNCTION IF EXISTS hybrid_search(text, vector(384), integer, integer);
+-- 2. Drop the old hybrid_search function (using 768 dims constraint)
+DROP FUNCTION IF EXISTS hybrid_search(text, vector(768), integer, integer);
 
--- 3. Recreate the function expecting 768 dimension vectors
+-- 3. Recreate the function expecting 384 dimension vectors
 CREATE OR REPLACE FUNCTION hybrid_search(
     query_text TEXT,
-    query_embedding vector(768),
+    query_embedding vector(384),
     match_count INT DEFAULT 5,
     rrf_k INT DEFAULT 60
 )
