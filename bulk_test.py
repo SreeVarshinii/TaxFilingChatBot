@@ -6,7 +6,10 @@ from typing import List, Dict
 # Assuming the Tax Engine uses these same embeddings under the hood
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from supabase.client import create_client
-from src.engine import TaxEngine
+import sys
+import os
+sys.path.insert(0, os.path.abspath("api"))
+from engine import TaxEngine
 
 def main():
     print("Loading environment and initializing services...")

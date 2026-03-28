@@ -4,10 +4,7 @@ import json
 import sys
 import os
 
-# Ensure src is discoverable
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from src.engine import TaxEngine
+from engine import TaxEngine
 
 app = func.FunctionApp()
 
@@ -59,11 +56,11 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
         # Format the context for the frontend
         context_data = []
         if "context" in response:
-            for i, doc in enumerate(response["context"]):
+            for i, text in enumerate(response["context"]):
                 context_data.append({
                     "id": i + 1,
-                    "content": doc.page_content,
-                    "metadata": doc.metadata
+                    "content": text,
+                    "metadata": {}
                 })
                 
         return func.HttpResponse(
