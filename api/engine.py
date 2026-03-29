@@ -14,6 +14,7 @@ SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_KEY", "")
 
 class TaxEngine:
     def __init__(self):
+        self.supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
         self.embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
         self.llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0)
         
