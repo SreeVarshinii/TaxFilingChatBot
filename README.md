@@ -1,5 +1,7 @@
 # 🎓 F-1 Scholar Tax Navigator
 
+Try Live Link here : https://zealous-flower-0db75870f.2.azurestaticapps.net/
+
 A specialized Retrieval-Augmented Generation (RAG) system built to navigate the complexities of 2025 IRS tax regulations for international students on F-1, J-1, M-1, and Q-1 visas.
 
 This AI-powered application ingests complex IRS Publications (like Pub 519) and legal forms (like Form 1040-NR, Form 8843), performs **Hybrid Search (Vector Embeddings + BM25 Reciprocal Rank Fusion)** against a Supabase `pgvector` database, and utilizes LangChain and Google's Gemini models to provide accurate, context-aware tax guidance.
