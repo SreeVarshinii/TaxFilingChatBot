@@ -1,136 +1,90 @@
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+from langchain_huggingface import HuggingFaceEndpoint, HuggingFaceEmbeddings, ChatHuggingFace
 from supabase.client import create_client, Client
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.retrievers import BaseRetriever
-from langchain_core.callbacks import CallbackManagerForRetrieverRun
-from langchain_core.documents import Document
 from pydantic import Field
 from typing import List, Any
-from ragas.metrics import faithfulness, context_precision
-from ragas import evaluate
-from datasets import Dataset
 
 load_dotenv()
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_KEY")
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
-
-if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not GOOGLE_API_KEY:
-    raise ValueError("Missing credentials in .env")
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-
-model_name = "BAAI/bge-small-en-v1.5"
-model_kwargs = {'device': 'cpu'}
-encode_kwargs = {'normalize_embeddings': True}
-embeddings = HuggingFaceBgeEmbeddings(
-    model_name=model_name,
-    model_kwargs=model_kwargs,
-    encode_kwargs=encode_kwargs
-)
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0)
-
-class SupabaseRestRetriever(BaseRetriever):
-    """Custom Retriever bypassing langchain-community bugs for latest supabase-py"""
-    client: Any = Field(description="Supabase Python Client")
-    embeddings: Any = Field(description="Embedding Model")
-    k: int = Field(default=5, description="Number of results")
-    form_filter: str = Field(default=None, description="Metadata form_type filter")
-
-    def _get_relevant_documents(self, query: str, *, run_manager: CallbackManagerForRetrieverRun) -> List[Document]:
-        query_embedding = self.embeddings.embed_query(query)
-        match_kwargs = {
-            "query_text": query,
-            "query_embedding": query_embedding,
-            "match_count": self.k
-        }
-        res = self.client.rpc("hybrid_search", match_kwargs).execute()
-        
-        docs = []
-        for row in res.data:
-            docs.append(Document(page_content=row["content"], metadata=row["metadata"]))
-        return docs
-
-# Core RAG Prompt mapping tax context strictly
-system_prompt = (
-    "You are an expert F-1 Scholar Tax Navigator for the 2025 tax year. "
-    "Use the following IRS document excerpts to answer the student's question accurately. "
-    "If you don't know the answer, just say that you don't know. Do not hallucinate or guess outside of these specific contexts. "
-    "Only provide tax advice explicitly sourced from the provided document chunks.\n\n"
-    "Context:\n{context}"
-)
-
-prompt = ChatPromptTemplate.from_messages([
-    ("system", system_prompt),
-    ("human", "{input}"),
-])
-
-# Ragas Baseline Hook
-def evaluate_rag_baseline(query: str, retrieved_contexts: list[str], answer: str, ground_truth: str = None):
-    """
-    Evaluates context precision and faithfulness of the generated answer 
-    against its retrieved chunks using Ragas.
-    """
-    data_sample = {
-        "question": [query],
-        "answer": [answer],
-        "contexts": [retrieved_contexts],
-        "ground_truth": [[ground_truth]] if ground_truth else [[""]]
-    }
-    dataset = Dataset.from_dict(data_sample)
-    
-    # Needs LLM and embeddings configured for Ragas implicitly or explicitly
-    result = evaluate(
-        dataset,
-        metrics=[context_precision, faithfulness],
-        llm=llm,
-        embeddings=embeddings
-    )
-    return result
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_KEY", "")
 
 class TaxEngine:
     def __init__(self):
-        self.retriever_base = SupabaseRestRetriever(client=supabase, embeddings=embeddings, k=5)
-        self.qa_chain = create_retrieval_chain(
-            retriever=self.retriever_base,
-            combine_docs_chain=create_stuff_documents_chain(llm, prompt)
+        self.supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        # Run lightweight embeddings locally in the HF Space
+        self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        
+        # Use Hugging Face serverless inference for the LLM
+        endpoint = HuggingFaceEndpoint(
+            repo_id="Qwen/Qwen2.5-7B-Instruct",
+            task="text-generation",
+            temperature=0.1,
+            max_new_tokens=512,
+            huggingfacehub_api_token=os.environ.get("HF_TOKEN")
         )
-        self.session_data = {
-            "entry_date": None,
-            "income_type": None,
-            "exempt_individual": None,
-            "days_present_current_year": 0
-        }
+        # Wrap the endpoint in ChatHuggingFace to properly handle System/Human messages
+        self.llm = ChatHuggingFace(llm=endpoint)
         
-    def evaluate_5_year_rule(self):
-        """
-        Determines Exemption from counting days (5-year rule for F-1).
-        If the student has been an exempt individual for any part of 5 calendar years,
-        they may no longer be exempt (subject to closer connection exception).
-        For simplicity in Phase 1: determine years present.
-        """
-        if not self.session_data["entry_date"]:
-            return False
-            
-        entry_dt = datetime.strptime(self.session_data["entry_date"], "%Y-%m-%d")
-        current_year = 2025
-        years_present = current_year - entry_dt.year + 1
+        self.prompt = ChatPromptTemplate.from_messages([
+            ("system", 
+            "You are an expert F-1 Tax Navigator. You provide clear, concise, step-by-step guidance "
+            "for international students on F-1 visas filing taxes in the US.\n\n"
+            "Use ONLY the retrieved publications and instructions to answer the question.\n"
+            "If the answer cannot be found in the context, explicitly state 'I do not have enough information "
+            "from the official IRS publications to answer.'\n\n"
+            "Context:\n{context}"
+            ),
+            ("human", "{input}"),
+        ])
         
-        # If years_present <= 5, they are generally an exempt individual and thus Nonresident Alien
-        if years_present <= 5:
-            self.session_data["exempt_individual"] = True
+    def evaluate_5_year_rule(self, entry_date_str: str) -> bool:
+        try:
+            entry_date = datetime.strptime(entry_date_str, "%Y-%m-%d")
+            current_year = datetime.now().year
+            years_present = current_year - entry_date.year
+            return years_present <= 5
+        except (ValueError, TypeError):
             return True
-        else:
-            self.session_data["exempt_individual"] = False
-            return False
-            
-    def query(self, user_question: str):
-        response = self.qa_chain.invoke({"input": user_question})
-        return response
+
+    def retrieve(self, query: str):
+        q_emb = self.embeddings.embed_query(query)
+        res = self.supabase.rpc(
+            "hybrid_search",
+            {
+                "query_text": query,
+                "query_embedding": q_emb,
+                "match_count": 5,
+                "rrf_k": 60
+            }
+        ).execute()
+        if res.data:
+            return [doc.get("content", "") for doc in res.data]
+        return []
+
+    def query(self, user_question: str, entry_date_str: str = None) -> dict:
+        prefix = ""
+        if entry_date_str:
+            is_exempt = self.evaluate_5_year_rule(entry_date_str)
+            if is_exempt:
+                prefix = f"[User Entry Date: {entry_date_str}. They are in their first 5 years and are likely a NONRESIDENT ALIEN.]\n"
+            else:
+                prefix = f"[User Entry Date: {entry_date_str}. They have exceeded 5 years and are likely a RESIDENT ALIEN for tax purposes.]\n"
+
+        full_query = prefix + user_question
+        
+        # 1. Retrieve Raw Contexts from Supabase
+        contexts = self.retrieve(full_query)
+        context_str = "\n\n---\n\n".join(contexts)
+        
+        # 2. Query LLM
+        chain = self.prompt | self.llm
+        response = chain.invoke({"context": context_str, "input": full_query})
+        
+        return {
+            "answer": response.content,
+            "context": contexts
+        }

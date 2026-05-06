@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFDirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import SupabaseVectorStore
 from supabase.client import create_client, Client
 
@@ -11,12 +11,8 @@ load_dotenv()
 # Load Environment Variables
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_KEY")  # Usually you need service_role key for inserting, but anon key might work if RLS is disabled
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
-
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
     raise ValueError("Missing Supabase credentials in .env")
-if not GOOGLE_API_KEY:
-    raise ValueError("Missing GOOGLE_API_KEY in .env")
 
 # Initialize Supabase Client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -62,14 +58,8 @@ def main():
         custom_metadata = get_metadata_from_filename(source_file)
         
         if filename.lower().startswith("f"):
-            print(f"Loading '{filename}' with UnstructuredPDFLoader for structure-aware chunking...")
-            from langchain_community.document_loaders import UnstructuredPDFLoader
-            # 'fast' strategy uses pdfminer and avoids OCR dependencies, while 'by_title' groups elements logically
-            loader = UnstructuredPDFLoader(file_path, mode="elements", strategy="fast", chunking_strategy="by_title")
-            docs = loader.load()
-            for doc in docs:
-                doc.metadata.update(custom_metadata)
-            form_docs.extend(docs)
+            print(f"Skipping form '{filename}' (not embedding forms)...")
+            continue
         else:
             print(f"Loading '{filename}' with PyPDFLoader for semantic chunking...")
             from langchain_community.document_loaders import PyPDFLoader
@@ -79,40 +69,49 @@ def main():
                 doc.metadata.update(custom_metadata)
             semantic_docs.extend(docs)
 
-    print("Initializing BAAI/bge-small-en-v1.5 Embeddings...")
-    from langchain_community.embeddings import HuggingFaceBgeEmbeddings
-    model_name = "BAAI/bge-small-en-v1.5"
-    model_kwargs = {'device': 'cpu'}
-    encode_kwargs = {'normalize_embeddings': True} # set True to compute cosine similarity
-    embeddings = HuggingFaceBgeEmbeddings(
-        model_name=model_name,
-        model_kwargs=model_kwargs,
-        encode_kwargs=encode_kwargs
-    )
+    print("Initializing Open-Source Hugging Face Embeddings...")
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-    print(f"Splitting {len(semantic_docs)} publication pages using Semantic Chunking...")
-    # Semantic chunking uses the embedding model to find logical breakpoints
-    from langchain_experimental.text_splitter import SemanticChunker
-    text_splitter = SemanticChunker(embeddings, breakpoint_threshold_type="percentile")
+    print(f"Splitting {len(semantic_docs)} publication pages using Recursive Character Chunking...")
+    # Replacing the API-heavy SemanticChunker with a local Recursive Splitter to avoid 429 Rate Limits
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1200,
+        chunk_overlap=200,
+        length_function=len
+    )
     
     semantic_chunks = text_splitter.split_documents(semantic_docs)
-    print(f"Created {len(semantic_chunks)} semantic chunks.")
+    print(f"Created {len(semantic_chunks)} chunks.")
     
     print(f"Loaded {len(form_docs)} structure-aware chunks from forms.")
     
     chunks = semantic_chunks + form_docs
     print(f"Total chunks to upload: {len(chunks)}")
 
-    print("Uploading chunks and embeddings to Supabase...")
-    # We use SupabaseVectorStore.from_documents to embed and upload
+    print("Uploading chunks and embeddings to Supabase in batches...")
     # 'documents' is the default table name expected by SupabaseVectorStore
-    vector_store = SupabaseVectorStore.from_documents(
-        chunks,
-        embeddings,
-        client=supabase,
-        table_name="documents",
-        query_name="match_documents"
-    )
+    import time
+    batch_size = 200
+    total_chunks = len(chunks)
+    
+    for i in range(0, total_chunks, batch_size):
+        batch = chunks[i: i + batch_size]
+        print(f"Uploading batch {i//batch_size + 1} ({i+1} to {min(i+batch_size, total_chunks)} of {total_chunks})...")
+        
+        for attempt in range(3):
+            try:
+                SupabaseVectorStore.from_documents(
+                    batch,
+                    embeddings,
+                    client=supabase,
+                    table_name="documents",
+                    query_name="match_documents"
+                )
+                break # Success, break out of retry loop
+            except Exception as e:
+                print(f"Network error on batch {i}: {e}. Retrying {attempt+1}/3 in 10 seconds...")
+                time.sleep(10)
     
     print("Ingestion complete! Data successfully uploaded to Supabase pgvector.")
 
