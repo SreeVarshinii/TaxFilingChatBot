@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_huggingface import HuggingFaceEndpoint, HuggingFaceEmbeddings, ChatHuggingFace
 from supabase.client import create_client, Client
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import Field
@@ -15,8 +15,19 @@ SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_KEY", "")
 class TaxEngine:
     def __init__(self):
         self.supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-        self.embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
-        self.llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0)
+        # Run lightweight embeddings locally in the HF Space
+        self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        
+        # Use Hugging Face serverless inference for the LLM
+        endpoint = HuggingFaceEndpoint(
+            repo_id="Qwen/Qwen2.5-7B-Instruct",
+            task="text-generation",
+            temperature=0.1,
+            max_new_tokens=512,
+            huggingfacehub_api_token=os.environ.get("HF_TOKEN")
+        )
+        # Wrap the endpoint in ChatHuggingFace to properly handle System/Human messages
+        self.llm = ChatHuggingFace(llm=endpoint)
         
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", 

@@ -2,16 +2,15 @@
 TRUNCATE TABLE documents;
 
 -- 2. Increase the dimension of the embedding vector column to support Gemini (3072 dims natively)
-ALTER TABLE documents ALTER COLUMN embedding TYPE vector(3072);
+ALTER TABLE documents ALTER COLUMN embedding TYPE vector(384);
 
 -- 3. Drop the old hybrid_search function 
-DROP FUNCTION IF EXISTS hybrid_search(text, vector(384), integer, integer);
-DROP FUNCTION IF EXISTS hybrid_search(text, vector(768), integer, integer);
+DROP FUNCTION IF EXISTS hybrid_search(text, vector(3072), integer, integer);
 
 -- 4. Recreate the function expecting 3072 dimension vectors
 CREATE OR REPLACE FUNCTION hybrid_search(
     query_text TEXT,
-    query_embedding vector(3072),
+    query_embedding vector(384),
     match_count INT DEFAULT 5,
     rrf_k INT DEFAULT 60
 )

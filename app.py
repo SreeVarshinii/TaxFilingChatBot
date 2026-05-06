@@ -1,64 +1,61 @@
-import chainlit as cl
+import gradio as gr
 from src.engine import TaxEngine
 
-@cl.on_chat_start
-async def on_chat_start():
-    # Store the engine in user session
-    engine = TaxEngine()
-    cl.user_session.set("engine", engine)
+# Initialize the engine
+engine = TaxEngine()
 
-    # Pre-Flight Questions for 5-Year Rule
-    res_entry = await cl.AskUserMessage(
-        content="Welcome to the F-1 Scholar Tax Navigator! To start, what was your initial date of entry into the U.S. on your F-1 visa? (Format: YYYY-MM-DD)",
-        timeout=120
-    ).send()
-    
-    if res_entry:
-        engine.session_data["entry_date"] = res_entry["output"]
+def chat_function(message, history, entry_date):
+    """
+    Gradio chat function. 
+    message: current user message
+    history: previous conversation history
+    entry_date: additional state/input from the user
+    """
+    # Use engine to query the LLM
+    try:
+        response = engine.query(message, entry_date_str=entry_date)
         
-    res_income = await cl.AskUserMessage(
-        content="Got it. What type of U.S. sourced income did you have in 2025? (e.g., W-2 wages, fellowship, 1042-S scholarship, None)",
-        timeout=120
-    ).send()
+        answer = response["answer"]
+        contexts = response.get("context", [])
+        
+        # Format the contexts as sources
+        if contexts:
+            source_text = "\n\n### Sources:\n"
+            for i, ctx in enumerate(contexts):
+                # The context is a string according to engine.py
+                source_text += f"**Source {i+1}**:\n{ctx[:200]}...\n\n"
+            answer += source_text
+            
+        return answer
+    except Exception as e:
+        return f"An error occurred: {str(e)}"
 
-    if res_income:
-        engine.session_data["income_type"] = res_income["output"]
+# Custom CSS for a better UI
+custom_css = """
+#component-0 { max-width: 800px; margin: auto; }
+"""
 
-    # Evaluate Residency
-    is_exempt = engine.evaluate_5_year_rule()
-    residency_status = "Nonresident Alien (Exempt Individual)" if is_exempt else "Resident Alien for Tax Purposes (or requires closer connection evaluation)"
+with gr.Blocks(css=custom_css, title="F-1 Scholar Tax Navigator") as demo:
+    gr.Markdown("# 🎓 F-1 Scholar Tax Navigator")
+    gr.Markdown("A specialized Retrieval-Augmented Generation (RAG) system built to navigate the complexities of 2025 IRS tax regulations for international students on F-1, J-1, M-1, and Q-1 visas.")
     
-    summary_msg = f"Based on your entry date, for 2025 you are likely considered a **{residency_status}**.\n\n"
-    summary_msg += "You can now ask me any tax-related questions, and I will cite the exact 2025 IRS instructions!"
-    
-    await cl.Message(content=summary_msg).send()
+    with gr.Accordion("Step 1: Determine Residency Status", open=True):
+        gr.Markdown("To accurately assist you, please enter your initial date of entry into the U.S. on your F-1 visa.")
+        entry_date_input = gr.Textbox(label="Entry Date (YYYY-MM-DD)", placeholder="e.g. 2021-08-15")
+        status_output = gr.Markdown()
+        
+        def check_status(date_str):
+            is_exempt = engine.evaluate_5_year_rule(date_str)
+            status = "Nonresident Alien (Exempt Individual)" if is_exempt else "Resident Alien for Tax Purposes"
+            return f"**Estimated Status for 2025**: {status}"
+            
+        entry_date_input.change(fn=check_status, inputs=entry_date_input, outputs=status_output)
 
-@cl.on_message
-async def on_message(message: cl.Message):
-    engine: TaxEngine = cl.user_session.get("engine")
-    
-    # We create a message to stream explicitly
-    msg = cl.Message(content="")
-    await msg.send()
-    
-    # Call the retrieval chain
-    # Note: To extract intermediate steps in Chainlit natively, we can use callbacks,
-    # but the simplest way is to read the 'context' from the chain's dictionary return.
-    response = engine.query(message.content)
-    answer = response["answer"]
-    context_docs = response.get("context", [])
-    
-    msg.content = answer
-    
-    # If chunks were retrieved, display them explicitly
-    if context_docs:
-        source_elements = []
-        for i, doc in enumerate(context_docs):
-            source_name = f"Source {i+1} ({doc.metadata.get('title', 'Unknown')})"
-            text_excerpt = f"{doc.page_content}\n\n[Metadata: {doc.metadata}]"
-            source_elements.append(
-                cl.Text(name=source_name, content=text_excerpt, display="inline")
-            )
-        msg.elements = source_elements
-    
-    await msg.update()
+    gr.Markdown("### Step 2: Ask Your Tax Question")
+    chat_interface = gr.ChatInterface(
+        fn=chat_function,
+        additional_inputs=[entry_date_input]
+    )
+
+if __name__ == "__main__":
+    demo.launch()
