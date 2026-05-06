@@ -8,7 +8,8 @@ app_file: app.py
 pinned: false
 ---
 
-# 🎓 F-1 Scholar Tax Navigator
+
+A specialized Retrieval-Augmented Generation (RAG) system built to navigate the complexities of 2025 IRS tax regulations for international students on F-1, J-1, M-1, and Q-1 visas.
 
 **[👉 Check it out live on Hugging Face Spaces!](https://huggingface.co/spaces/Sreevarshinii/taxapp)**
 
